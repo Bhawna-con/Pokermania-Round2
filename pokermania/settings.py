@@ -97,14 +97,11 @@ CORS_ALLOWED_ORIGINS = [
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'pokermania',
-        'USER': 'root',
-        'PASSWORD': 'abcdefgh',
-        'HOST': 'localhost',
-        'PORT': '3306',  # Default PostgreSQL port
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
 
 
 # Password validation

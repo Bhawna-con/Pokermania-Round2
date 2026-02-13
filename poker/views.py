@@ -9,6 +9,9 @@ from django.core.exceptions import ValidationError, PermissionDenied, ObjectDoes
 import re
 from .models import Bot, Match, TestBot, TestMatch
 from .utils import play_match,play_test_match
+import os
+from .models import Bot, Match, TestBot, TestMatch, Round2Score
+
 
 User = get_user_model()
 
@@ -81,10 +84,16 @@ def logout_view(request):
     logout(request)
     return redirect('home')
 
-
 def home(request):
     user_logged_in = request.user.is_authenticated
-    return render(request, 'home.html', {'user_logged_in': user_logged_in})
+
+    leaderboard = Round2Score.objects.select_related('bot').order_by('-score')
+
+    return render(request, 'home.html', {
+        'user_logged_in': user_logged_in,
+        'leaderboard': leaderboard
+    })
+
 
 
 @login_required
@@ -104,34 +113,28 @@ def documentation(request):
 def upload_bot(request):
     user = request.user
     bot_name = request.POST.get('bot_name')
-    bot_file_path = request.POST.get('bot_file_path')
-    if Bot.objects.filter(user=user).count()>1:
-        messages.error(request, "You can only upload 1 bot.")
-        return redirect('deploy_bot') 
-    
-    if Bot.objects.filter(name=bot_name).exists():
-        messages.error(request, "Bot name already taken!")
-        
+    uploaded_file = request.FILES.get('bot_file')
 
-    try:
-        with open(bot_file_path, 'r') as file:
-            bot_file = file.read()
-
-    except FileNotFoundError:
-        messages.error(request, f"The file at {bot_file_path} was not found.")
+    if not uploaded_file:
+        messages.error(request, "No file uploaded")
         return redirect('deploy_bot')
 
-    try:
-        Bot.objects.create(user=user, name=bot_name, file=bot_file, path=bot_file_path)
-        
-        messages.success(request, f"Bot '{bot_name}' uploaded successfully!")
-    
-    except Exception as e:
-        traceback.print_exc()
-        messages.error(request, "An error occurred while uploading the bot.")
-        return redirect('deploy_bot')
+    save_path = os.path.join("user_bots", f"{user.username}_{bot_name}.py")
 
+    with open(save_path, "wb+") as destination:
+        for chunk in uploaded_file.chunks():
+            destination.write(chunk)
+
+    Bot.objects.create(
+        user=user,
+        name=bot_name,
+        file=save_path,
+        path=os.path.abspath(save_path)
+    )
+
+    messages.success(request, f"Bot '{bot_name}' uploaded successfully!")
     return redirect('deploy_bot')
+
 
 @login_required
 @transaction.atomic
@@ -192,9 +195,12 @@ def test_run(request):
             messages.error(request, f"Error executing match: {str(e)}")
             return redirect('/deploy_bot/')
 
-        if isinstance(match_result, str) and match_result.startswith("Invalid"):
-            messages.error(request, f"Match error: {match_result}")
-            return redirect('/deploy_bot/')
+        if isinstance(result[0], list):  # Error case
+            for error in result[0]:
+                messages.error(request, error)
+        return redirect('admin_panel')
+
+
         # Create match record
         try:
             test_match = TestMatch.objects.create(
@@ -306,9 +312,24 @@ def admin_panel(request):
         return redirect('home')
 
     if request.method == 'POST':
-        # Get selected bots from form
+
         selected_bot_ids = request.POST.getlist('bots')
-        selected_bots = Bot.objects.filter(id__in=selected_bot_ids)
+        all_selected = Bot.objects.filter(id__in=selected_bot_ids)
+
+        selected_bots = []
+        invalid_bots = []
+
+        for bot in all_selected:
+            if os.path.exists(bot.path):
+                selected_bots.append(bot)
+            else:
+                invalid_bots.append(bot.name)
+
+        # block round-1 bots from running
+        if invalid_bots:
+            messages.error(request, f"These bots belong to Round 1 and cannot be run: {', '.join(invalid_bots)}")
+            return redirect('admin_panel')
+
         
         # Validate selection
         if len(selected_bots) < 2:
@@ -334,16 +355,36 @@ def admin_panel(request):
         if(rounds_data==None):
             return JsonResponse({"Error":winner_name})
 
-        try:            
+        try:
             # Create match record
             match = Match.objects.create(
                 winner=winner_name,
                 rounds_data=rounds_data
             )
             match.players.add(*selected_bots)
-        
+
+            from .models import Round2Score
+
+            # find winner bot object
+            winner_bot = selected_bots.get(name=winner_name)
+
+            # update round 2 leaderboard
+            for bot in selected_bots:
+                r2, _ = Round2Score.objects.get_or_create(bot=bot)
+
+                r2.matches_played += 1
+
+                if bot == winner_bot:
+                    r2.wins += 1
+                    r2.score += 10
+                else:
+                    r2.score -= 5
+
+                r2.save()
+
         except Exception as e:
             messages.error(request, f"Error saving match: {str(e)}")
+
 
         return redirect('admin_panel')
 

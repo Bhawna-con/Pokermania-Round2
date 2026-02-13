@@ -63,5 +63,30 @@
             </div>            
         </div>
     </div>
+<h2>Round 2 Leaderboard</h2>
+
+<table border="1">
+    <tr>
+        <th>Rank</th>
+        <th>Bot</th>
+        <th>Score</th>
+        <th>Wins</th>
+        <th>Matches</th>
+    </tr>
+
+    {% for entry in leaderboard %}
+    <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>{{ entry.bot.name }}</td>
+        <td>{{ entry.score }}</td>
+        <td>{{ entry.wins }}</td>
+        <td>{{ entry.matches_played }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="5">No matches played yet</td>
+    </tr>
+    {% endfor %}
+</table>
 
 {% endblock %}

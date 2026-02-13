@@ -90,3 +90,12 @@ class TestMatch(models.Model):
     def __str__(self):
         return f"Test Match: {self.bot1.name} vs {self.players.count() - 1} opponents"
 
+class Round2Score(models.Model):
+    bot = models.OneToOneField(Bot, on_delete=models.CASCADE)
+    score = models.IntegerField(default=0)
+    matches_played = models.IntegerField(default=0)
+    wins = models.IntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.bot.name} - {self.score}"
+
